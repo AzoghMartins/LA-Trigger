@@ -1,8 +1,16 @@
 # LA-Trigger
 
-A drum trigger plugin for Linux, Windows and macOS (VST3, plus LV2 / Standalone on Linux and AU on macOS). It detects drum hits on an audio track
+A drum trigger plugin for Linux, Windows and macOS. It detects drum hits on an audio track
 and sends them as MIDI notes with velocity to any instrument in your DAW. It can also gate and
 compress the source track using those same hits.
+
+| Platform | Formats |
+|---|---|
+| Windows 10/11 (x64) | VST3 |
+| macOS 10.13+ (Apple silicon and Intel) | VST3, AU |
+| Linux (x86_64) | VST3, LV2, Standalone |
+
+Ready-to-install builds for all three are on the [Releases](https://github.com/AzoghMartins/LA-Trigger/releases) page.
 
 ![LA-Trigger](docs/screenshot.png)
 
