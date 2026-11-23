@@ -142,7 +142,7 @@ void WaveformDisplay::mouseWheelMove (const juce::MouseEvent&, const juce::Mouse
 
 void WaveformDisplay::paint (juce::Graphics& g)
 {
-    g.fillAll (Colours::graphBg);
+    Hardware::drawScreen (g, getLocalBounds().toFloat());
     const auto area = graphArea();
     const auto lane = gateLane();
     const double sr = processor.getEngineSampleRate();
@@ -397,8 +397,7 @@ void WaveformDisplay::paint (juce::Graphics& g)
 void MatchDisplay::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (Colours::graphBg);
-    g.fillRoundedRectangle (r, 4.0f);
+    Hardware::drawScreen (g, r, 4.0f);
 
     auto area = r.reduced (6.0f, 6.0f);
     area.removeFromBottom (12.0f);
@@ -485,8 +484,7 @@ void VelocityCurveDisplay::tick()
 void VelocityCurveDisplay::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (Colours::graphBg);
-    g.fillRoundedRectangle (r, 4.0f);
+    Hardware::drawScreen (g, r, 4.0f);
     const auto a = r.reduced (6.0f);
 
     EngineParams p;
@@ -586,8 +584,7 @@ void HitInfoPanel::tick()
 void HitInfoPanel::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (Colours::graphBg);
-    g.fillRoundedRectangle (r, 4.0f);
+    Hardware::drawScreen (g, r, 4.0f);
 
     const bool trig = hasHit && isTrigger (last);
     const auto colour = ! hasHit ? Colours::textDim

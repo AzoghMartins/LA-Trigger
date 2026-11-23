@@ -313,14 +313,7 @@ void MainPanel::resized()
 
 void MainPanel::paint (juce::Graphics& g)
 {
-    g.fillAll (Colours::background);
-
-    // Header bar
-    auto header = juce::Rectangle<int> (0, 0, baseWidth, 46);
-    g.setGradientFill (juce::ColourGradient (Colours::panelLight, 0.0f, 0.0f, Colours::panel, 0.0f, 46.0f, false));
-    g.fillRect (header);
-    g.setColour (Colours::edge);
-    g.drawHorizontalLine (46, 0.0f, (float) baseWidth);
+    Hardware::drawChassis (g, { 0, 0, baseWidth, baseHeight }, 46);
 
     // Logo: stylised transient mark + name
     {
@@ -333,13 +326,13 @@ void MainPanel::paint (juce::Graphics& g)
         mark.lineTo (x0 + 16.0f, y0 - 5.0f);
         mark.lineTo (x0 + 19.0f, y0 + 3.0f);
         mark.lineTo (x0 + 26.0f, y0);
-        g.setColour (Colours::accent);
+        g.setColour (Colours::signature);
         g.strokePath (mark, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         g.setFont (uiFont (21.0f, true));
         g.setColour (Colours::text);
         g.drawText ("LA", 48, 8, 30, 30, juce::Justification::centredLeft);
-        g.setColour (Colours::accent);
+        g.setColour (Colours::signature);
         g.drawText ("TRIGGER", 76, 8, 110, 30, juce::Justification::centredLeft);
         g.setColour (Colours::textDim);
         g.setFont (uiFont (10.5f));
