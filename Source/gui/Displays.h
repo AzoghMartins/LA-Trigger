@@ -14,6 +14,7 @@ class LATriggerProcessor;
 class WaveformDisplay : public juce::Component, public juce::SettableTooltipClient
 {
 public:
+    void paintOverChildren (juce::Graphics& g) override { Hardware::drawGlass (g, getLocalBounds().toFloat()); }
     explicit WaveformDisplay (LATriggerProcessor&);
 
     void addPoint (const DisplayPoint& p);
@@ -57,6 +58,7 @@ private:
 class MatchDisplay : public juce::Component
 {
 public:
+    void paintOverChildren (juce::Graphics& g) override { Hardware::drawGlass (g, getLocalBounds().toFloat(), 4.0f); }
     explicit MatchDisplay (LATriggerProcessor& p) : processor (p) {}
     void setLastHit (const HitEvent& h) { lastHit = h; hasHit = h.status != HitStatus::manual; repaint(); }
     void paint (juce::Graphics&) override;
@@ -71,6 +73,7 @@ private:
 class VelocityCurveDisplay : public juce::Component
 {
 public:
+    void paintOverChildren (juce::Graphics& g) override { Hardware::drawGlass (g, getLocalBounds().toFloat(), 4.0f); }
     explicit VelocityCurveDisplay (juce::AudioProcessorValueTreeState& s);
     void setLastHit (float peakDb, int velocity) { lastDb = peakDb; lastVel = velocity; hitAge = 0; repaint(); }
     void tick();
@@ -86,6 +89,7 @@ private:
 class HitInfoPanel : public juce::Component
 {
 public:
+    void paintOverChildren (juce::Graphics& g) override { Hardware::drawGlass (g, getLocalBounds().toFloat(), 4.0f); }
     explicit HitInfoPanel (juce::AudioProcessorValueTreeState& s) : state (s) {}
     void setHit (const HitEvent& h);
     void tick();
