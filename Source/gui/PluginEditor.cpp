@@ -51,11 +51,11 @@ MainPanel::MainPanel (LATriggerProcessor& p)
     for (int i = 0; i < processor.getNumPrograms(); ++i)
         presetBox.addItem (processor.getProgramName (i), i + 1);
     presetBox.setTextWhenNothingSelected ("Factory presets");
-    presetBox.setSelectedId (processor.getCurrentProgram() + 1, juce::dontSendNotification);
-    presetBox.onChange = [this]
+    presetBox.setText (processor.getProgramName (processor.getCurrentProgram()), juce::dontSendNotification);
+    presetBox.onItemChosen = [this] (int id)
     {
-        if (presetBox.getSelectedId() > 0)
-            processor.setCurrentProgram (presetBox.getSelectedId() - 1);
+        processor.setCurrentProgram (id - 1);
+        presetBox.setText (processor.getProgramName (processor.getCurrentProgram()), juce::dontSendNotification);
     };
     presetBox.setTooltip ("Factory starting points for common drum sources");
     addAndMakeVisible (presetBox);
@@ -75,11 +75,11 @@ MainPanel::MainPanel (LATriggerProcessor& p)
 
     freezeButton.setClickingTogglesState (true);
     freezeButton.onClick = [this] { waveform.setFrozen (freezeButton.getToggleState()); };
-    freezeButton.setTooltip ("Freeze the display to inspect hits");
+    freezeButton.setTooltip ("Freeze the display to inspect hits. While frozen, click a hit to mark it as bleed (e.g. snare spilling into a tom mic) or as a real hit");
     addAndMakeVisible (freezeButton);
 
     // ---- Displays ---------------------------------------------------------------------------
-    waveform.setTooltip ("Drag the orange threshold line to set the trigger threshold");
+    waveform.onHitMarked = [this] (const HitEvent&) { matchDisplay.repaint(); };
     addAndMakeVisible (waveform);
     addAndMakeVisible (meters);
 
@@ -197,8 +197,8 @@ void MainPanel::showClearMenu()
     m.addItem (4, "Reset hit counters");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (clearButton), [this] (int r)
     {
-        if (r == 1 || r == 3) processor.clearTargetProfile();
-        if (r == 2 || r == 3) processor.clearRejectProfile();
+        if (r == 1 || r == 3) { processor.clearTargetProfile(); waveform.clearMarks (HitMark::hit); }
+        if (r == 2 || r == 3) { processor.clearRejectProfile(); waveform.clearMarks (HitMark::bleed); }
         if (r == 4) hitInfo.resetCounters();
     });
 }
@@ -398,8 +398,9 @@ void MainPanel::tick()
         repaint (baseWidth - 520, 0, 520, 46);
     }
 
-    if (presetBox.getSelectedId() != processor.getCurrentProgram() + 1)
-        presetBox.setSelectedId (processor.getCurrentProgram() + 1, juce::dontSendNotification);
+    const auto presetName = processor.getProgramName (processor.getCurrentProgram());
+    if (presetBox.getText() != presetName && ! presetBox.isPopupActive())
+        presetBox.setText (presetName, juce::dontSendNotification);
 }
 
 //==============================================================================

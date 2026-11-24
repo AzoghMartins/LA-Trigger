@@ -28,7 +28,8 @@ private:
     juce::AudioProcessorValueTreeState& state;
 
     // Header
-    juce::ComboBox presetBox, spanBox;
+    MenuBox presetBox;
+    juce::ComboBox spanBox;
     PillButton freezeButton { "FREEZE", Colours::learn };
 
     // Displays

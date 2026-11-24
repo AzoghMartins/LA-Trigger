@@ -90,6 +90,9 @@ enum class HitStatus : uint8_t
     manual
 };
 
+/** What the user marked a hit as in the frozen display (UI-side only, the engine ignores it). */
+enum class HitMark : uint8_t { none, hit, bleed };
+
 struct HitEvent
 {
     int64_t samplePos = 0;   // output timeline sample position of the transient
@@ -99,14 +102,68 @@ struct HitEvent
     float rejectScore = -1.0f; // 0..100, -1 if no reject profile
     HitStatus status  = HitStatus::accepted;
     SpectrumFeatures spectrum {};
+    HitMark mark = HitMark::none;
 };
 
+/** Maximum number of individually marked example hits kept per profile. */
+constexpr int kMaxProfileExamples = 32;
+
+/**
+    A learned sound: the average fingerprint of every learned / marked hit, plus the individual
+    fingerprints of hits the user marked by hand. A hit is compared with the average and with each
+    example, and the best match counts, so marking two different bleed sources (say snare and
+    hi-hat) rejects both instead of averaging them into a sound that matches neither.
+*/
 struct SoundProfile
 {
     SpectrumFeatures sum {};
     int count = 0;
+    std::array<SpectrumFeatures, kMaxProfileExamples> examples {};
+    int numExamples = 0;
 
-    void clear() noexcept { sum.fill (0.0f); count = 0; }
+    void clear() noexcept { sum.fill (0.0f); count = 0; numExamples = 0; }
+
+    /** Adds (delta > 0) or removes (delta < 0) one hit from the average. */
+    void addToAverage (const SpectrumFeatures& s, int delta) noexcept
+    {
+        if (delta == 0)
+            return;
+        if (delta < 0 && count <= 1)
+        {
+            sum.fill (0.0f);
+            count = 0;
+            return;
+        }
+        for (int i = 0; i < kNumBands; ++i)
+            sum[(size_t) i] += (float) delta * s[(size_t) i];
+        count += delta;
+    }
+
+    void addExample (const SpectrumFeatures& s) noexcept
+    {
+        if (numExamples == kMaxProfileExamples) // full: forget the oldest
+        {
+            for (int i = 1; i < numExamples; ++i)
+                examples[(size_t) i - 1] = examples[(size_t) i];
+            --numExamples;
+        }
+        examples[(size_t) numExamples++] = s;
+    }
+
+    void removeExample (const SpectrumFeatures& s) noexcept
+    {
+        for (int i = numExamples; --i >= 0;)
+        {
+            if (examples[(size_t) i] == s)
+            {
+                for (int j = i + 1; j < numExamples; ++j)
+                    examples[(size_t) j - 1] = examples[(size_t) j];
+                --numExamples;
+                return;
+            }
+        }
+    }
+
     SpectrumFeatures mean() const noexcept
     {
         SpectrumFeatures m {};
@@ -173,6 +230,8 @@ public:
     static int mapVelocity (float peakDb, const EngineParams& p) noexcept;
     /** 0..1 similarity of two spectral fingerprints (1 = identical). */
     static float similarity (const SpectrumFeatures& a, const SpectrumFeatures& b) noexcept;
+    /** Best similarity of a fingerprint to a profile's average or any of its examples; -1 if empty. */
+    static float profileSimilarity (const SoundProfile& p, const SpectrumFeatures& s) noexcept;
 
 private:
     struct Capture

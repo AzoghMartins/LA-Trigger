@@ -20,7 +20,9 @@ public:
     void addPoint (const DisplayPoint& p);
     void addHit (const HitEvent& h);
     void setTimeSpan (double seconds) { spanSeconds = seconds; repaint(); }
-    void setFrozen (bool f) { frozen = f; }
+    void setFrozen (bool f);
+    /** Forgets the marks of one kind shown on hits (after that learned profile was cleared). */
+    void clearMarks (HitMark kind);
 
     void paint (juce::Graphics&) override;
     void mouseMove (const juce::MouseEvent&) override;
@@ -28,8 +30,11 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseExit (const juce::MouseEvent&) override;
 
     std::function<void (double)> onSpanChanged;
+    /** Called after the user marked a hit (to refresh read-outs and show a confirmation). */
+    std::function<void (const HitEvent&)> onHitMarked;
 
 private:
     juce::Rectangle<float> graphArea() const;
@@ -37,6 +42,11 @@ private:
     float dbToY (float db, juce::Rectangle<float> area) const;
     float yToDb (float y, juce::Rectangle<float> area) const;
     bool nearThreshold (juce::Point<float> p) const;
+    float sampleToX (double samplePos) const;
+    /** The hit under the mouse in the frozen view, or nullptr. */
+    HitEvent* hitAt (juce::Point<float> p);
+    void showHitMenu (int64_t samplePos);
+    void updateTooltip();
 
     LATriggerProcessor& processor;
     juce::RangedAudioParameter* thresholdParam = nullptr;
@@ -50,6 +60,7 @@ private:
     double spanSeconds = 3.0;
     bool frozen = false;
     bool draggingThreshold = false, hoverThreshold = false;
+    int64_t hoverHit = -1; // samplePos of the hit under the mouse (frozen view only)
 
     static constexpr float minDb = -60.0f, maxDb = 0.0f;
 };
