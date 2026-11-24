@@ -34,7 +34,8 @@ jobs:
       - name: Package
         run: |
           cd build/LATrigger_artefacts/Release
-          tar czf ../../../LA-Trigger-linux-x86_64.tar.gz VST3/LA-Trigger.vst3 LV2/LA-Trigger.lv2 Standalone/LA-Trigger
+          cp ../../../LICENSE LICENSE-LA-Trigger.txt
+          tar czf ../../../LA-Trigger-linux-x86_64.tar.gz VST3/LA-Trigger.vst3 LV2/LA-Trigger.lv2 Standalone/LA-Trigger LICENSE-LA-Trigger.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -57,7 +58,9 @@ jobs:
 
       - name: Package
         shell: pwsh
-        run: Compress-Archive -Path build/LATrigger_artefacts/Release/VST3/LA-Trigger.vst3 -DestinationPath LA-Trigger-windows-x64.zip
+        run: |
+          Copy-Item LICENSE LICENSE-LA-Trigger.txt
+          Compress-Archive -Path build/LATrigger_artefacts/Release/VST3/LA-Trigger.vst3, LICENSE-LA-Trigger.txt -DestinationPath LA-Trigger-windows-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -93,7 +96,8 @@ jobs:
       - name: Package
         run: |
           cd build/LATrigger_artefacts/Release
-          zip -r -y ../../../LA-Trigger-macos-universal.zip VST3/LA-Trigger.vst3 AU/LA-Trigger.component
+          cp ../../../LICENSE LICENSE-LA-Trigger.txt
+          zip -r -y ../../../LA-Trigger-macos-universal.zip VST3/LA-Trigger.vst3 AU/LA-Trigger.component LICENSE-LA-Trigger.txt
 
       - uses: actions/upload-artifact@v4
         with:
