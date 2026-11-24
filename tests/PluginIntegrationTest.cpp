@@ -144,7 +144,8 @@ int main (int argc, char** argv)
     // ---- State round trip -----------------------------------------------------------------------
     juce::MemoryBlock stateData;
     proc->getStateInformation (stateData);
-    LATriggerProcessor copy;
+    auto copyPtr = std::make_unique<LATriggerProcessor>(); // large object: keep it off the stack (1 MB on Windows)
+    auto& copy = *copyPtr;
     copy.setStateInformation (stateData.getData(), (int) stateData.getSize());
     bool same = true;
     for (auto* p : proc->getParameters())
@@ -213,7 +214,8 @@ int main (int argc, char** argv)
 
     // ---- Mark a captured hit as bleed (frozen-display workflow) ------------------------------------
     {
-        LATriggerProcessor tom;
+        auto tomPtr = std::make_unique<LATriggerProcessor>();
+        auto& tom = *tomPtr;
         tom.setPlayConfigDetails (2, 2, sr, 512);
         tom.prepareToPlay (sr, 512);
         setParam (tom, ParamID::threshold, -30.0f);
@@ -253,7 +255,8 @@ int main (int argc, char** argv)
         // The mark survives a save / restore
         juce::MemoryBlock saved;
         tom.getStateInformation (saved);
-        LATriggerProcessor restored;
+        auto restoredPtr = std::make_unique<LATriggerProcessor>();
+        auto& restored = *restoredPtr;
         restored.setStateInformation (saved.getData(), (int) saved.getSize());
         restored.setPlayConfigDetails (2, 2, sr, 512);
         restored.prepareToPlay (sr, 512);
