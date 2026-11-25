@@ -159,6 +159,14 @@ float TriggerEngine::similarity (const SpectrumFeatures& a, const SpectrumFeatur
     return (float) std::exp (-(rmsDb / 10.0) * (rmsDb / 10.0));
 }
 
+float TriggerEngine::profileSimilarity (const SoundProfile& p, const SpectrumFeatures& s) noexcept
+{
+    float best = p.count > 0 ? similarity (s, p.mean()) : -1.0f;
+    for (int i = 0; i < p.numExamples; ++i)
+        best = std::max (best, similarity (s, p.examples[(size_t) i]));
+    return best;
+}
+
 void TriggerEngine::computeFeatures (int64_t onset, SpectrumFeatures& out) noexcept
 {
     const int64_t start = onset - preRoll;
@@ -289,12 +297,12 @@ void TriggerEngine::decide (Capture& c, EngineListener& listener)
     float simTarget = -1.0f, simReject = -1.0f;
     if (target.count > 0)
     {
-        simTarget = similarity (hit.spectrum, target.mean());
+        simTarget = profileSimilarity (target, hit.spectrum);
         hit.matchScore = std::max (0.0f, simTarget) * 100.0f;
     }
     if (rejectProfile.count > 0)
     {
-        simReject = similarity (hit.spectrum, rejectProfile.mean());
+        simReject = profileSimilarity (rejectProfile, hit.spectrum);
         hit.rejectScore = std::max (0.0f, simReject) * 100.0f;
     }
 
@@ -302,18 +310,14 @@ void TriggerEngine::decide (Capture& c, EngineListener& listener)
 
     if (learnMode == LearnMode::target)
     {
-        for (int i = 0; i < kNumBands; ++i)
-            target.sum[(size_t) i] += hit.spectrum[(size_t) i];
-        ++target.count;
+        target.addToAverage (hit.spectrum, 1);
         learnedMinDb = std::min (learnedMinDb, hit.peakDb);
         learnedMaxDb = std::max (learnedMaxDb, hit.peakDb);
         hit.status = HitStatus::learnedTarget;
     }
     else if (learnMode == LearnMode::reject)
     {
-        for (int i = 0; i < kNumBands; ++i)
-            rejectProfile.sum[(size_t) i] += hit.spectrum[(size_t) i];
-        ++rejectProfile.count;
+        rejectProfile.addToAverage (hit.spectrum, 1);
         hit.status = HitStatus::learnedReject;
         trigger = false;
     }
@@ -324,6 +328,15 @@ void TriggerEngine::decide (Capture& c, EngineListener& listener)
             const bool scoreOk = hit.matchScore >= params.matchThreshold;
             const bool closerToTarget = rejectProfile.count == 0 || simTarget >= simReject;
             if (! (scoreOk && closerToTarget))
+            {
+                trigger = false;
+                hit.status = HitStatus::rejectedMatch;
+            }
+        }
+        else if (params.matchEnabled && rejectProfile.count > 0)
+        {
+            // Only bleed has been learned / marked: reject what sounds like it.
+            if (hit.rejectScore >= params.matchThreshold)
             {
                 trigger = false;
                 hit.status = HitStatus::rejectedMatch;

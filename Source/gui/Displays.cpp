@@ -36,6 +36,112 @@ WaveformDisplay::WaveformDisplay (LATriggerProcessor& p) : processor (p), ring (
     thresholdValue = s.getRawParameterValue (ParamID::threshold);
     gateEnabled = s.getRawParameterValue (ParamID::gateEnable);
     setOpaque (true);
+    updateTooltip();
+}
+
+void WaveformDisplay::setFrozen (bool f)
+{
+    frozen = f;
+    if (! frozen)
+        hoverHit = -1;
+    updateTooltip();
+    repaint();
+}
+
+void WaveformDisplay::clearMarks (HitMark kind)
+{
+    for (auto& h : hits)
+        if (h.mark == kind)
+            h.mark = HitMark::none;
+    repaint();
+}
+
+void WaveformDisplay::updateTooltip()
+{
+    setTooltip (frozen ? "Click a hit marker to mark it as bleed (never trigger on sounds like it) or as a real hit"
+                       : "Drag the orange threshold line to set the trigger threshold. FREEZE the display to mark hits as bleed");
+}
+
+float WaveformDisplay::sampleToX (double samplePos) const
+{
+    const auto area = graphArea();
+    const double sr = processor.getEngineSampleRate();
+    const int decim = processor.getDisplayDecimation();
+    const double latestSample = (double) (latest + 1) * decim;
+    const double visibleSamples = spanSeconds * sr;
+    return area.getRight() - (float) ((latestSample - samplePos) / visibleSamples) * area.getWidth();
+}
+
+HitEvent* WaveformDisplay::hitAt (juce::Point<float> p)
+{
+    if (! frozen || ! graphArea().expanded (0.0f, 4.0f).contains (p))
+        return nullptr;
+
+    HitEvent* best = nullptr;
+    float bestDist = 7.0f;
+    for (auto& h : hits)
+    {
+        if (h.status == HitStatus::manual)
+            continue;
+        const float d = std::abs (sampleToX ((double) h.samplePos) - p.x);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = &h;
+        }
+    }
+    return best;
+}
+
+void WaveformDisplay::showHitMenu (int64_t samplePos)
+{
+    auto it = std::find_if (hits.begin(), hits.end(), [samplePos] (const HitEvent& h) { return h.samplePos == samplePos; });
+    if (it == hits.end())
+        return;
+    const auto& h = *it;
+
+    juce::String info = juce::String (h.peakDb, 1) + " dB";
+    if (h.matchScore >= 0.0f)
+        info << "   match " << juce::roundToInt (h.matchScore) << "%";
+    if (h.rejectScore >= 0.0f)
+        info << "   bleed " << juce::roundToInt (h.rejectScore) << "%";
+
+    juce::PopupMenu m;
+    m.addSectionHeader (statusText (h));
+    m.addItem (-1, info, false);
+    m.addSeparator();
+    m.addItem (1, "Mark as bleed  (reject sounds like this)", true, h.mark == HitMark::bleed);
+    m.addItem (2, "Mark as real hit  (trigger on sounds like this)", true, h.mark == HitMark::hit);
+    if (h.mark != HitMark::none)
+        m.addItem (3, "Remove mark");
+
+    juce::Component::SafePointer<WaveformDisplay> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                         .withTargetScreenArea ({ juce::Desktop::getMousePosition(), juce::Desktop::getMousePosition() }),
+                     [safe, samplePos] (int r)
+    {
+        if (safe == nullptr || r <= 0)
+            return;
+        auto& self = *safe;
+        auto hit = std::find_if (self.hits.begin(), self.hits.end(), [samplePos] (const HitEvent& e) { return e.samplePos == samplePos; });
+        if (hit == self.hits.end())
+            return;
+        const auto mark = r == 1 ? HitMark::bleed : (r == 2 ? HitMark::hit : HitMark::none);
+        self.processor.setHitMark (*hit, mark);
+        hit->mark = mark;
+        if (self.onHitMarked)
+            self.onHitMarked (*hit);
+        self.repaint();
+    });
+}
+
+void WaveformDisplay::mouseExit (const juce::MouseEvent&)
+{
+    if (hoverHit >= 0)
+    {
+        hoverHit = -1;
+        repaint();
+    }
 }
 
 void WaveformDisplay::addPoint (const DisplayPoint& p)
@@ -96,21 +202,28 @@ bool WaveformDisplay::nearThreshold (juce::Point<float> p) const
 void WaveformDisplay::mouseMove (const juce::MouseEvent& e)
 {
     const bool near = nearThreshold (e.position);
-    if (near != hoverThreshold)
+    const auto* hit = near ? nullptr : hitAt (e.position);
+    const int64_t hover = hit != nullptr ? hit->samplePos : -1;
+    if (near != hoverThreshold || hover != hoverHit)
     {
         hoverThreshold = near;
-        setMouseCursor (near ? juce::MouseCursor::UpDownResizeCursor : juce::MouseCursor::NormalCursor);
+        hoverHit = hover;
+        setMouseCursor (near ? juce::MouseCursor::UpDownResizeCursor
+                             : (hover >= 0 ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor));
         repaint();
     }
 }
 
 void WaveformDisplay::mouseDown (const juce::MouseEvent& e)
 {
-    if (nearThreshold (e.position) && thresholdParam != nullptr)
+    if (nearThreshold (e.position) && thresholdParam != nullptr && ! e.mods.isPopupMenu())
     {
         draggingThreshold = true;
         thresholdParam->beginChangeGesture();
+        return;
     }
+    if (const auto* hit = hitAt (e.position))
+        showHitMenu (hit->samplePos);
 }
 
 void WaveformDisplay::mouseDrag (const juce::MouseEvent& e)
@@ -167,7 +280,7 @@ void WaveformDisplay::paint (juce::Graphics& g)
     const double visiblePoints = spanSeconds * sr / decim;
     const double latestSample = (double) (latest + 1) * decim;
     const double visibleSamples = visiblePoints * decim;
-    auto sampleToX = [&] (double samplePos)
+    auto xForSample = [&] (double samplePos)
     {
         return area.getRight() - (float) ((latestSample - samplePos) / visibleSamples) * area.getWidth();
     };
@@ -177,7 +290,7 @@ void WaveformDisplay::paint (juce::Graphics& g)
     const double firstT = std::ceil ((latestSample - visibleSamples) / sr / step) * step;
     for (double t = firstT; t * sr <= latestSample; t += step)
     {
-        const float x = sampleToX (t * sr);
+        const float x = xForSample (t * sr);
         g.setColour (Colours::grid.withAlpha (0.6f));
         g.drawVerticalLine ((int) x, area.getY(), lane.getBottom());
         g.setColour (Colours::textDim.withAlpha (0.7f));
@@ -323,7 +436,7 @@ void WaveformDisplay::paint (juce::Graphics& g)
 
     for (const auto& h : hits)
     {
-        const float x = sampleToX ((double) h.samplePos);
+        const float x = xForSample ((double) h.samplePos);
         if (x < area.getX() - 20.0f || x > area.getRight() + 20.0f)
             continue;
 
@@ -361,6 +474,26 @@ void WaveformDisplay::paint (juce::Graphics& g)
                             juce::Justification::centredLeft);
             }
         }
+
+        // User marks (frozen view) and the hover highlight
+        if (h.mark != HitMark::none)
+        {
+            const bool bleed = h.mark == HitMark::bleed;
+            const auto c = bleed ? Colours::danger : Colours::learn;
+            const auto tag = juce::Rectangle<float> (bleed ? 40.0f : 30.0f, 14.0f).withCentre ({ x, area.getBottom() - 10.0f });
+            g.setColour (c);
+            g.fillRoundedRectangle (tag, 3.0f);
+            g.setColour (Colours::background);
+            g.setFont (uiFont (9.5f, true));
+            g.drawText (bleed ? "BLEED" : "HIT", tag, juce::Justification::centred);
+        }
+        if (frozen && h.samplePos == hoverHit)
+        {
+            g.setColour (Colours::text.withAlpha (0.12f));
+            g.fillRect (juce::Rectangle<float> (x - 6.0f, area.getY(), 12.0f, area.getHeight()));
+            g.setColour (Colours::text.withAlpha (0.6f));
+            g.drawRect (juce::Rectangle<float> (x - 6.0f, area.getY(), 12.0f, area.getHeight()), 1.0f);
+        }
     }
 
     // ---- Legend ---------------------------------------------------------------------------------
@@ -386,7 +519,8 @@ void WaveformDisplay::paint (juce::Graphics& g)
     {
         g.setColour (Colours::learn);
         g.setFont (uiFont (11.0f, true));
-        g.drawText ("FROZEN", juce::Rectangle<float> (area.getX() + 4.0f, 4.0f, 80.0f, 14.0f), juce::Justification::centredLeft);
+        g.drawText ("FROZEN  -  click a hit to mark it",
+                    juce::Rectangle<float> (area.getX() + 4.0f, 4.0f, 240.0f, 14.0f), juce::Justification::centredLeft);
     }
 
     g.setColour (Colours::edge);

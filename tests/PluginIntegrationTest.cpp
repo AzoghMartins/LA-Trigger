@@ -144,7 +144,8 @@ int main (int argc, char** argv)
     // ---- State round trip -----------------------------------------------------------------------
     juce::MemoryBlock stateData;
     proc->getStateInformation (stateData);
-    LATriggerProcessor copy;
+    auto copyPtr = std::make_unique<LATriggerProcessor>(); // large object: keep it off the stack (1 MB on Windows)
+    auto& copy = *copyPtr;
     copy.setStateInformation (stateData.getData(), (int) stateData.getSize());
     bool same = true;
     for (auto* p : proc->getParameters())
@@ -210,6 +211,72 @@ int main (int argc, char** argv)
 
     ed.reset();
     proc.reset();
+
+    // ---- Mark a captured hit as bleed (frozen-display workflow) ------------------------------------
+    {
+        auto tomPtr = std::make_unique<LATriggerProcessor>();
+        auto& tom = *tomPtr;
+        tom.setPlayConfigDetails (2, 2, sr, 512);
+        tom.prepareToPlay (sr, 512);
+        setParam (tom, ParamID::threshold, -30.0f);
+
+        // A "tom" (low pitched drum) with snare spill that is loud enough to cross the threshold
+        juce::AudioBuffer<float> take (2, (int) (sr * 3.2));
+        take.clear();
+        int toms = 0, spills = 0;
+        for (int k = 0; k < 12; ++k)
+        {
+            const int t = (int) (0.05 * sr) + k * (int) (0.25 * sr);
+            if (k % 3 == 0) { addDrum (take, t, Drum::kick, 0.5f); ++toms; }
+            else { addDrum (take, t, Drum::snare, 0.2f); ++spills; }
+        }
+        notes = runAudio (tom, take, 480);
+        check ((int) notes.size() == toms + spills, "before marking, snare spill triggers too (" + juce::String ((int) notes.size()) + " notes)");
+
+        // Mark the first triggered snare as bleed, as the UI does from the frozen display.
+        HitEvent h, spill;
+        bool found = false;
+        while (tom.hitQueue.pop (h))
+            if (! found && h.status == HitStatus::accepted && std::abs (h.samplePos - (int64_t) (0.30 * sr) - latency) < (int64_t) (0.02 * sr))
+            {
+                spill = h;
+                found = true;
+            }
+        check (found, "found the snare spill hit to mark");
+        tom.setHitMark (spill, HitMark::bleed);
+        runAudio (tom, silence, 480);
+        check (tom.getState().getRawParameterValue (ParamID::matchEnable)->load() > 0.5f, "marking bleed switches sound match on");
+        check (tom.getRejectSnapshot().count.load() == 1, "marked hit added to the bleed profile");
+
+        notes = runAudio (tom, take, 480);
+        check ((int) notes.size() == toms, "after marking one spill hit, only the tom triggers: " + juce::String ((int) notes.size())
+                                              + " notes for " + juce::String (toms) + " toms");
+
+        // The mark survives a save / restore
+        juce::MemoryBlock saved;
+        tom.getStateInformation (saved);
+        auto restoredPtr = std::make_unique<LATriggerProcessor>();
+        auto& restored = *restoredPtr;
+        restored.setStateInformation (saved.getData(), (int) saved.getSize());
+        restored.setPlayConfigDetails (2, 2, sr, 512);
+        restored.prepareToPlay (sr, 512);
+        notes = runAudio (restored, take, 480);
+        check ((int) notes.size() == toms, "bleed mark restored with the session (" + juce::String ((int) notes.size()) + " notes)");
+
+        // Removing the mark brings the spill back
+        spill.mark = HitMark::bleed;
+        tom.setHitMark (spill, HitMark::none);
+        runAudio (tom, silence, 480);
+        notes = runAudio (tom, take, 480);
+        check ((int) notes.size() == toms + spills && tom.getRejectSnapshot().count.load() == 0,
+               "removing the mark undoes it (" + juce::String ((int) notes.size()) + " notes)");
+
+        // Re-selecting the current preset after a tweak restores it
+        tom.setCurrentProgram (1);
+        setParam (tom, ParamID::lpf, 15000.0f);
+        tom.setCurrentProgram (1);
+        check (tom.getState().getRawParameterValue (ParamID::lpf)->load() < 200.0f, "re-applying the same preset resets tweaked values");
+    }
     std::printf (failures == 0 ? "All integration checks passed\n" : "%d integration check(s) failed\n", failures);
     return failures == 0 ? 0 : 1;
 }

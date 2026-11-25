@@ -90,8 +90,13 @@ public:
 
     void setLearnMode (LearnMode m) noexcept { requestedLearnMode.store ((int) m); }
     LearnMode getLearnMode() const noexcept { return (LearnMode) requestedLearnMode.load(); }
-    void clearTargetProfile() noexcept { clearTargetRequest.store (true); }
-    void clearRejectProfile() noexcept { clearRejectRequest.store (true); }
+    void clearTargetProfile() noexcept { markedExamples[0].clear(); clearTargetRequest.store (true); }
+    void clearRejectProfile() noexcept { markedExamples[1].clear(); clearRejectRequest.store (true); }
+
+    /** Marks a captured hit (from the frozen display) as a real hit or as bleed, or removes its mark.
+        The hit's fingerprint is moved into / out of the target and bleed profiles accordingly, and
+        sound matching is switched on so the mark takes effect. Message thread only. */
+    void setHitMark (const HitEvent& hit, HitMark newMark);
     void sendTestHit (int velocity) noexcept { manualVelocity.store (velocity); }
     /** Sets threshold and velocity input range from the hits captured while learning. */
     bool fitToLearnedHits();
@@ -121,6 +126,15 @@ private:
         void hitEvent (const HitEvent& h) override { owner->hitQueue.push (h); }
     };
 
+    /** One change to a learned profile, sent from the UI to the audio thread. */
+    struct ProfileEdit
+    {
+        bool reject = false;
+        int8_t averageDelta = 0, exampleDelta = 0;
+        float peakDb = -100.0f;
+        SpectrumFeatures spectrum {};
+    };
+
     void handleRequests() noexcept;
     void publishProfiles() noexcept;
     void applyPendingProfiles() noexcept;
@@ -136,6 +150,8 @@ private:
     int activeLearnMode = 0;
     std::atomic<bool> clearTargetRequest { false }, clearRejectRequest { false };
     std::atomic<int> manualVelocity { -1 };
+    SpscQueue<ProfileEdit, 256> profileEdits;
+    std::array<std::vector<SpectrumFeatures>, 2> markedExamples; // target / bleed, message thread copy for saving
 
     ProfileSnapshot targetSnap, rejectSnap;
     int publishedTargetCount = -1, publishedRejectCount = -1;
